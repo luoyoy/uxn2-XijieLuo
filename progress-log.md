@@ -67,3 +67,55 @@ Not completed yet:
 
 Next step:
 - Week 4 will focus on `Screen/width`, `Screen/height`, `Screen/x`, `Screen/y`, and a first working version of `Screen/pixel`.
+
+## Week 4: 13 Jul - 19 Jul
+
+Main work:
+- Continued the Screen device implementation after the initial dispatch prototype.
+- Improved `Screen.js` so that it no longer only creates a blank placeholder canvas.
+- Implemented interpreted handling for `Screen/width`, `Screen/height`, `Screen/x`, and `Screen/y`.
+- Added visible pixel drawing for writes to `Screen/pixel`.
+
+Implementation notes:
+- The Screen canvas now uses simple layer buffers rather than only drawing a static white box.
+- Pixel colour is currently selected using the low two bits of the `Screen/pixel` value.
+- Bit `0x40` selects the foreground layer. Otherwise, drawing goes to the background layer.
+- A simple fallback palette is used for now: white, light grey, dark grey, and black.
+
+Current limitations:
+- This is still a simplified rendering model.
+- Full Varvara palette handling is not implemented yet.
+
+## Week 5: 20 Jul - 26 Jul
+
+Main work:
+- Improved the rendering approach so the canvas is redrawn from stored layer buffers.
+- Added basic background and foreground layer support.
+- Treated foreground colour `0` as transparent when composing the final canvas image.
+- Added a simple Screen pixel demo to the web examples.
+
+Implementation notes:
+- The canvas redraw path now combines background and foreground layers each time Screen output changes.
+- This makes the implementation easier to extend for sprite rendering because pixel and sprite operations can both write into the same buffers.
+- The canvas is still placed using a simple prototype layout, so UI integration remains basic.
+
+Current limitations:
+- The layer model is currently focused on supporting pixel and sprite drawing for static graphical examples.
+- `Screen/auto`, `Screen/vector`, mouse, keyboard, audio, and animation remain out of scope for this stage.
+
+## Week 6: 27 Jul - 2 Aug
+
+Main work:
+- Implemented `Screen/addr` as interpreted Screen state.
+- Implemented basic 8x8 sprite rendering from Uxn memory.
+- Added a simple Screen sprite demo using an 8-byte heart/icon pattern.
+- Confirmed the core Screen path now supports canvas creation, width/height, x/y, pixel drawing, addr, and basic sprite drawing.
+
+Implementation notes:
+- Sprite data is read from `yakuState.Uxn.memory` starting at the address stored in `Screen/addr`.
+- Each sprite row is treated as one byte, so the basic sprite format is 8 bytes for an 8x8 image.
+- Set bits are drawn as visible pixels; unset bits are treated as transparent.
+- Basic horizontal and vertical flip handling has been added for the sprite command byte.
+
+Current limitations:
+- Sprite rendering currently works for simple 8x8 examples, but the full Varvara colour behaviour is not implemented yet.

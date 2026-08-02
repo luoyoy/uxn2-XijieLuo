@@ -345,6 +345,42 @@ BRK
 
 |0200
 @data $1`
+        },
+        'screen-pixel-demo': {
+            name: 'Screen Pixel Demo',
+            code: `( Screen Pixel Demo )
+|0100
+
+@main
+    #0080 #22 DEO2  ( width = 128 )
+    #0060 #24 DEO2  ( height = 96 )
+
+    #0010 #28 DEO2 #0010 #2a DEO2 #03 #2e DEO
+    #0011 #28 DEO2 #0011 #2a DEO2 #03 #2e DEO
+    #0012 #28 DEO2 #0012 #2a DEO2 #03 #2e DEO
+    #0013 #28 DEO2 #0013 #2a DEO2 #03 #2e DEO
+    #0014 #28 DEO2 #0014 #2a DEO2 #03 #2e DEO
+    #0015 #28 DEO2 #0015 #2a DEO2 #03 #2e DEO
+    #0016 #28 DEO2 #0016 #2a DEO2 #03 #2e DEO
+    #0017 #28 DEO2 #0017 #2a DEO2 #03 #2e DEO
+    BRK`
+        },
+        'screen-sprite-demo': {
+            name: 'Screen Sprite Demo',
+            code: `( Screen Sprite Demo )
+|0100
+
+@main
+    #0080 #22 DEO2  ( width = 128 )
+    #0060 #24 DEO2  ( height = 96 )
+    #0020 #28 DEO2  ( x = 32 )
+    #0018 #2a DEO2  ( y = 24 )
+    ;heart #2c DEO2 ( Screen/addr = heart sprite )
+    #03 #2f DEO     ( Draw 1 sprite in black )
+    BRK
+
+@heart
+    00 66 ff ff ff 7e 3c 18`
         }
 };
 		
