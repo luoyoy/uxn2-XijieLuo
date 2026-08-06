@@ -133,7 +133,8 @@ function populateMemoryAndBuildSymbolTable(tokens, yakuState) {
         if (token[0] === MAIN) {
             pc = 0x0100;
         } else if (token[0] === ADDR) {
-            if ( token[1]>0 && token[1] < pc) { // no error for |0000
+            const isZeroPageOrDeviceAddress = token[1] >= 0 && token[1] < 0x0100;
+            if ( token[1]>0 && token[1] < pc && !isZeroPageOrDeviceAddress) {
                 throw new Error(`Error: memory region marked with rune |${toHex(token[1],2)} overlaps with used memory. All addresses until ${toHex(pc,2)} are already used.`);
             }
             pc = token[1]; // set the pc to this address

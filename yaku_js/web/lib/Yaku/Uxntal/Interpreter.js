@@ -53,13 +53,30 @@ export function runProgram(yakuState) {
     if (VV === 2) {
         console.log('*** RUNNING ***');        
     }
-    
-    yakuState.Uxn.pc = 0x100; // All programs must start at 0x100
+    return runFromPc(yakuState, 0x100);
+} 
+
+export function runVector(yakuState, vectorPc, maxInstructions = 50000) {
+    if (!vectorPc) {
+        return [yakuState, []];
+    }
+
+    yakuState.Uxn.stacks = [[], []];
+    return runFromPc(yakuState, vectorPc, maxInstructions);
+}
+
+function runFromPc(yakuState, startPc, maxInstructions = 100000) {
+    yakuState.Uxn.pc = startPc;
     const word_sz = 1; // Default word size
     let current_parent = 'MAIN';
     const call_stack = ['MAIN'];
+    let instructionCount = 0;
     
     while (true) {
+        instructionCount++;
+        if (instructionCount > maxInstructions) {
+            throw new Error(`Execution stopped after ${maxInstructions} instructions. This probably means the vector did not reach BRK.`);
+        }
         if (yakuState.Uxn.pc > 0xffff) {
             throw new Error("Program counter reached end of memory.\n");
         }
@@ -143,7 +160,7 @@ export function runProgram(yakuState) {
         yakuState.Uxn.pc++;
     }
     return [yakuState,warningStrs];
-} 
+}
 
 /**
  * Executes a single Uxn instruction.

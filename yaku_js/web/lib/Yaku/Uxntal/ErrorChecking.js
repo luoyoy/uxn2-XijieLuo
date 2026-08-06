@@ -135,14 +135,16 @@ export function checkErrors(tokens, yakuState) {
                         prev_token[0] === LIT
                         && !skip_checks) {
                         if (prev_token[2] > alloc_sz ) {
-                            const warning_str =  'Allocation size smaller than size of constant to be stored:'.prettyPrintStr([prev_token,token,next_token],1)
-                            .getLineForToken(next_token,yakuState);
+                            const warning_str = 'Allocation size smaller than size of constant to be stored:' +
+                                prettyPrintStr([prev_token, token, next_token], 1) +
+                                getLineForToken(next_token, yakuState);
                             [warnings,unique_warnings] = _push_if_unique(warning_str,warnings,unique_warnings);
 
                         }
                         if (prev_token[2] != word_sz ) {
-                            const warning_str = 'Store size different from size of constant to be stored:'.prettyPrintStr([prev_token,token,next_token],1)
-                            .getLineForToken(next_token,yakuState);
+                            const warning_str = 'Store size different from size of constant to be stored:' +
+                                prettyPrintStr([prev_token, token, next_token], 1) +
+                                getLineForToken(next_token, yakuState);
                             [warnings,unique_warnings] = _push_if_unique(warning_str,warnings,unique_warnings);
                         }
                     }
@@ -168,7 +170,7 @@ export function checkErrors(tokens, yakuState) {
             && next_token[0] === INSTR 
             && /SFT/.test(next_token[1])
             && !skip_checks) {
-            if (token[2] === 2) {
+            if (token[2] === 2 && (token[1] & 0xff00) !== 0) {
                 const error_str = 'Second argument of SFT must be a byte:' + 
                     prettyPrintStr([prev_token, token, next_token], 1) + 
                     getLineForToken(token, yakuState);
@@ -179,9 +181,11 @@ export function checkErrors(tokens, yakuState) {
                 ( prev_token[0] === INSTR && /LD/.test(prev_token[1]))
                 )                
                 && prev_token[2] != next_token[2]
+                && !(next_token[1] === 'SFT' && next_token[2] === 2)
             ) {
-                const warning_str = 'SFT short mode not compatible with size of first argument:'.prettyPrintStr([prev_token,token,next_token],1)
-                .getLineForToken(token,yakuState);
+                const warning_str = 'SFT short mode not compatible with size of first argument:' +
+                    prettyPrintStr([prev_token, token, next_token], 1) +
+                    getLineForToken(token, yakuState);
                 [warnings,unique_warnings] = _push_if_unique(warning_str,warnings,unique_warnings);
             }
         }
@@ -218,7 +222,7 @@ function buildAllocationTable(tokens, yakuState) {
     let current_parent = '';
     let current_cfqn = '';
     yakuState.allocationTable = {};
-    let prev_consecutive_label = '';
+    let consecutiveLabels = [];
     
     for (let idx = 0; idx < tokens.length; idx++) {
         const token = tokens[idx];
@@ -233,36 +237,68 @@ function buildAllocationTable(tokens, yakuState) {
             } else {
                 current_cfqn = current_parent + '/' + token[1];
             }
+
+            const name = current_cfqn !== '' ? current_cfqn : current_parent;
+            consecutiveLabels.push(name);
             
             if (next_token[0] === PAD) {
-                const name = current_cfqn !== '' ? current_cfqn : current_parent;
-                yakuState.allocationTable[name] = next_token[1];
+                setAllocationForAliases(yakuState, consecutiveLabels, next_token[1]);
             } else if (next_token[0] === RAW) {
-                const name = current_cfqn !== '' ? current_cfqn : current_parent;
-                yakuState.allocationTable[name] = next_token[2];
+                setAllocationForAliases(yakuState, consecutiveLabels, next_token[2]);
             } else if (next_token[0] === REF && next_token[2]>3) { // includes immediate, but that should never happen
                 // We set this to 2 as a minimal allocation
-                const name = current_cfqn !== '' ? current_cfqn : current_parent;
-                yakuState.allocationTable[name] = 2;              
+                setAllocationForAliases(yakuState, consecutiveLabels, 2);              
             } else if (next_token[0] === LABEL) {
-                prev_consecutive_label = (token[2] === 2) ? current_parent : current_cfqn;
+                const followingAllocation = getConsecutiveFieldAllocation(tokens, idx + 1);
+                if (followingAllocation > 0) {
+                    setAllocationForAliases(yakuState, consecutiveLabels, followingAllocation);
+                }
                 continue;
             } else {
-                const name = current_cfqn !== '' ? current_cfqn : current_parent;
-                yakuState.allocationTable[name] = 0;
+                setAllocationForAliases(yakuState, consecutiveLabels, 0);
             }
-            
-            if (prev_consecutive_label !== '') {
-                const currentAlloc = current_cfqn !== '' 
-                    ? yakuState.allocationTable[current_cfqn]
-                    : yakuState.allocationTable[current_parent];
-                yakuState.allocationTable[prev_consecutive_label] = currentAlloc;
-                prev_consecutive_label = '';
+
+            if (next_token[0] !== LABEL) {
+                consecutiveLabels = [];
             }
         }
     }
     
     return yakuState;
+}
+
+function setAllocationForAliases(yakuState, labels, size) {
+    for (const label of labels) {
+        yakuState.allocationTable[label] = Math.max(
+            yakuState.allocationTable[label] || 0,
+            size
+        );
+    }
+}
+
+function getConsecutiveFieldAllocation(tokens, startIdx) {
+    let size = 0;
+
+    for (let idx = startIdx; idx < tokens.length - 1; idx++) {
+        const label = tokens[idx];
+        const allocation = tokens[idx + 1];
+
+        if (label[0] !== LABEL || label[2] !== 1) {
+            break;
+        }
+
+        if (allocation[0] === PAD) {
+            size += allocation[1];
+            idx++;
+        } else if (allocation[0] === RAW) {
+            size += allocation[2];
+            idx++;
+        } else {
+            break;
+        }
+    }
+
+    return size;
 }
 
 // export function getLinesForTokens(programText) {

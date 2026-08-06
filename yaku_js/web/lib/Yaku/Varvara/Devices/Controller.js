@@ -1,55 +1,39 @@
-package Yaku::Varvara::Devices::Controller;
+"use strict";
 
-use v5.30;
-use warnings;
-no warnings qw(experimental deprecated);
-use feature qw(signatures);
-use strict;
-use bytes;
+import { deviceRead, deviceWrite } from "./Access.js";
 
-use vars qw( $VERSION );
-$VERSION = "1.0.0";
+export const Controller = 0x80;
 
-use constant DBG => $ENV{YAKU_DBG} // 0;
-
-use integer;
-
-use Yaku::Varvara::Devices::Access qw( deviceRead deviceWrite );
-
-use Data::Dumper;
-use Carp;
-
-use Exporter;
-
-@Yaku::Varvara::Devices::Controller::ISA = qw(Exporter);
-
-@Yaku::Varvara::Devices::Controller::EXPORT = qw(
-    controller_deo
-    controller_dei
-    Controller
-);
-
-use constant {
-    Controller => 0x80
-};
-
-sub controller_deo($args,$sz,$yakuState) {
-    my $dev_addr = $args->[0];
-    my $port = $dev_addr & 0xf;
-    deviceWrite($args,$sz,$yakuState);
-    given($port) {
-        when (-1) {
-            # TBA
-        }
-        default {
-            warn "DEO to Controller device not supported\n";
-        }
+function getControllerState(yakuState) {
+    if (!yakuState.controllerState) {
+        yakuState.controllerState = {
+            vector: 0,
+            button: 0,
+            key: 0,
+            events: []
+        };
     }
+    return yakuState.controllerState;
 }
 
-sub controller_dei($args,$sz,$yakuState) {
-    warn "DEI from Controller device not supported\n";
-    return deviceRead($args,$sz,$yakuState);
+export function controller_deo(args, sz, yakuState) {
+    const port = args[0] & 0xf;
+    const state = getControllerState(yakuState);
+
+    deviceWrite(args, sz, yakuState);
+    if (port === 0x0 || port === 0x1) {
+        state.vector = deviceRead([Controller + 0x0], 2, yakuState);
+    }
+
+    state.events.push({ kind: "DEO", port, size: sz });
 }
 
-1;
+export function controller_dei(args, sz, yakuState) {
+    const state = getControllerState(yakuState);
+
+    yakuState.Uxn.dev[Controller + 0x2] = state.button & 0xff;
+    yakuState.Uxn.dev[Controller + 0x3] = state.key & 0xff;
+
+    state.events.push({ kind: "DEI", port: args[0] & 0xf, size: sz });
+    return deviceRead(args, sz, yakuState);
+}

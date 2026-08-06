@@ -1,5 +1,6 @@
 
 import { mainForWeb } from './lib/Yaku.js';
+import { runVector } from './lib/Yaku/Uxntal/Interpreter.js';
 import { toHex } from './lib/Yaku/Uxntal/PrettyPrint.js';
 import { examples } from './lib/ExamplesForApp.js';
 console.log('Yaku Web App Starting...');
@@ -101,6 +102,35 @@ BRK
         const outputPanes = document.querySelectorAll('.output-pane');
         
         let yakuState = null;
+        let frameHandle = null;
+
+        function stopFrameLoop() {
+            if (frameHandle !== null) {
+                cancelAnimationFrame(frameHandle);
+                frameHandle = null;
+            }
+        }
+
+        function startScreenFrameLoop() {
+            stopFrameLoop();
+
+            if (!yakuState || !yakuState.screenState || !yakuState.screenState.vector) {
+                return;
+            }
+
+            const frame = function() {
+                try {
+                    runVector(yakuState, yakuState.screenState.vector, 50000);
+                    updateStacksOutput();
+                    frameHandle = requestAnimationFrame(frame);
+                } catch (error) {
+                    addOutput('error', 'Frame loop stopped: ' + error.message);
+                    stopFrameLoop();
+                }
+            };
+
+            frameHandle = requestAnimationFrame(frame);
+        }
         
         // 文件操作功能
         function setupFileOperations() {
@@ -296,6 +326,7 @@ BRK
 
         function clearOutput() {
             try {
+                stopFrameLoop();
                 // 清除所有输出面板
                 const allContents = document.querySelectorAll('.output-content');
                 allContents.forEach(function(content) {
@@ -320,6 +351,7 @@ BRK
         if (executeBtn) {
             executeBtn.onclick = function() {
                 console.log('Execute clicked');
+                stopFrameLoop();
                 const code = codeEditor ? codeEditor.value.trim() : '';
                 
                 
@@ -375,6 +407,10 @@ BRK
                             // }
                     }
                     updateStacksOutput();
+                    if (!yakuState.webState.errorsBuffer && yakuState.screenState?.vector) {
+                        addOutput('info', 'Screen frame loop started at vector 0x' + yakuState.screenState.vector.toString(16));
+                        startScreenFrameLoop();
+                    }
                     // if (code.indexOf('#42') !== -1) {
                     //     addOutput('success', 'Program output: *');
                     // } else if (code.indexOf('Hello') !== -1) {
@@ -395,6 +431,7 @@ BRK
         if (clearBtn) {
             clearBtn.onclick = function() {
                 console.log('Clear output clicked');
+                stopFrameLoop();
                 
                 try {
                     // 清除所有输出面板

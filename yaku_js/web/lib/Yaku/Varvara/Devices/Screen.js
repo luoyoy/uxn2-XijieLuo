@@ -14,6 +14,7 @@ const PALETTE = ["#ffffff", "#c8c8c8", "#666666", "#000000"];
 function getScreenState(yakuState) {
     if (!yakuState.screenState) {
         yakuState.screenState = {
+            vector: 0,
             width: DEFAULT_WIDTH,
             height: DEFAULT_HEIGHT,
             auto: 0,
@@ -35,6 +36,21 @@ function getScreenState(yakuState) {
 
 function readShort(yakuState, port) {
     return deviceRead([Screen + port], 2, yakuState);
+}
+
+function writeShort(yakuState, port, value) {
+    yakuState.Uxn.dev[Screen + port] = (value >> 8) & 0xff;
+    yakuState.Uxn.dev[Screen + port + 1] = value & 0xff;
+}
+
+function syncScreenRegisters(state, yakuState) {
+    writeShort(yakuState, 0x0, state.vector);
+    writeShort(yakuState, 0x2, state.width);
+    writeShort(yakuState, 0x4, state.height);
+    yakuState.Uxn.dev[Screen + 0x6] = state.auto & 0xff;
+    writeShort(yakuState, 0x8, state.x);
+    writeShort(yakuState, 0xa, state.y);
+    writeShort(yakuState, 0xc, state.addr);
 }
 
 function normaliseDimension(value, fallback) {
@@ -102,7 +118,27 @@ function getCanvasElements() {
     return { canvas, status };
 }
 
-function renderScreen(state) {
+function getPalette(yakuState) {
+    const r = deviceRead([0x06], 2, yakuState);
+    const g = deviceRead([0x08], 2, yakuState);
+    const b = deviceRead([0x0a], 2, yakuState);
+
+    if (r === 0 && g === 0 && b === 0) {
+        return PALETTE;
+    }
+
+    const palette = [];
+    for (let i = 0; i < 4; i++) {
+        const shift = (3 - i) * 4;
+        const red = ((r >> shift) & 0x0f) * 17;
+        const green = ((g >> shift) & 0x0f) * 17;
+        const blue = ((b >> shift) & 0x0f) * 17;
+        palette.push(`#${red.toString(16).padStart(2, "0")}${green.toString(16).padStart(2, "0")}${blue.toString(16).padStart(2, "0")}`);
+    }
+    return palette;
+}
+
+function renderScreen(state, yakuState) {
     ensureLayerBuffers(state);
     const { canvas, status } = getCanvasElements();
     if (!canvas) {
@@ -115,11 +151,12 @@ function renderScreen(state) {
     canvas.style.height = `${state.height * 2}px`;
     const ctx = canvas.getContext("2d");
     const imageData = ctx.createImageData(state.width, state.height);
+    const palette = getPalette(yakuState);
 
     for (let i = 0; i < state.width * state.height; i++) {
         const fg = state.foregroundLayer[i];
         const colorIndex = fg === 0 ? state.backgroundLayer[i] : fg;
-        const hex = PALETTE[colorIndex] || PALETTE[0];
+        const hex = palette[colorIndex] || palette[0];
         const offset = i * 4;
         imageData.data[offset] = parseInt(hex.slice(1, 3), 16);
         imageData.data[offset + 1] = parseInt(hex.slice(3, 5), 16);
@@ -132,7 +169,7 @@ function renderScreen(state) {
     ctx.strokeRect(0, 0, state.width - 1, state.height - 1);
 
     if (status) {
-        status.textContent = `size=${state.width}x${state.height}, x=${state.x}, y=${state.y}, addr=0x${state.addr.toString(16)}, events=${state.events.length}`;
+        status.textContent = `size=${state.width}x${state.height}, x=${state.x}, y=${state.y}, addr=0x${state.addr.toString(16)}, vector=0x${state.vector.toString(16)}, auto=0x${state.auto.toString(16)}, events=${state.events.length}`;
     }
 }
 
@@ -169,6 +206,7 @@ function drawPixelCommand(state, value) {
     }
 
     drawPixelToLayer(state, state.x, state.y, colorIndex, useForeground);
+    autoAdvance(state, 1, 1, 0);
 }
 
 function readMemoryByte(yakuState, addr) {
@@ -179,24 +217,56 @@ function readMemoryByte(yakuState, addr) {
     return token[1] & 0xff;
 }
 
-function drawSpriteCommand(state, yakuState, value) {
+function drawOneSprite(state, yakuState, value, spriteIndex) {
     const useForeground = (value & 0x40) !== 0;
     const flipY = (value & 0x20) !== 0;
     const flipX = (value & 0x10) !== 0;
-    const colorIndex = value & 0x03;
-    const visibleColor = colorIndex;
+    const isTwoBpp = (value & 0x80) !== 0;
+    const colorOffset = value & 0x03;
+    const bytesPerSprite = isTwoBpp ? 16 : 8;
+    const baseAddr = state.addr + (spriteIndex * bytesPerSprite);
 
     for (let row = 0; row < 8; row++) {
         const sourceRow = flipY ? 7 - row : row;
-        const rowByte = readMemoryByte(yakuState, state.addr + sourceRow);
+        const plane0 = readMemoryByte(yakuState, baseAddr + sourceRow);
+        const plane1 = isTwoBpp ? readMemoryByte(yakuState, baseAddr + 8 + sourceRow) : 0;
         for (let col = 0; col < 8; col++) {
             const sourceCol = flipX ? col : 7 - col;
-            const bitIsSet = ((rowByte >> sourceCol) & 0x01) !== 0;
-            if (bitIsSet) {
-                drawPixelToLayer(state, state.x + col, state.y + row, visibleColor, useForeground);
+            const bit0 = (plane0 >> sourceCol) & 0x01;
+            const bit1 = (plane1 >> sourceCol) & 0x01;
+            const spritePixel = bit0 | (bit1 << 1);
+            if (spritePixel !== 0) {
+                const drawColor = isTwoBpp
+                    ? (spritePixel + colorOffset) & 0x03
+                    : colorOffset;
+                drawPixelToLayer(state, state.x + col, state.y + row, drawColor, useForeground);
             }
         }
     }
+}
+
+function autoAdvance(state, dx, dy, daddr) {
+    if ((state.auto & 0x01) !== 0) {
+        state.x = (state.x + dx) & 0xffff;
+    }
+    if ((state.auto & 0x02) !== 0) {
+        state.y = (state.y + dy) & 0xffff;
+    }
+    if ((state.auto & 0x04) !== 0) {
+        state.addr = (state.addr + daddr) & 0xffff;
+    }
+}
+
+function drawSpriteCommand(state, yakuState, value) {
+    const isTwoBpp = (value & 0x80) !== 0;
+    const bytesPerSprite = isTwoBpp ? 16 : 8;
+    const spriteCount = 1 + ((state.auto >> 4) & 0x0f);
+
+    for (let i = 0; i < spriteCount; i++) {
+        drawOneSprite(state, yakuState, value, i);
+        autoAdvance(state, 8, 8, bytesPerSprite);
+    }
+    syncScreenRegisters(state, yakuState);
 }
 
 export function screen_deo(args,sz,yakuState) {
@@ -205,7 +275,9 @@ export function screen_deo(args,sz,yakuState) {
     deviceWrite(args,sz,yakuState);
 
     const state = getScreenState(yakuState);
-    if (port === 0x2 || port === 0x3) {
+    if (port === 0x0 || port === 0x1) {
+        state.vector = readShort(yakuState, 0x0);
+    } else if (port === 0x2 || port === 0x3) {
         state.width = readShort(yakuState, 0x2) || DEFAULT_WIDTH;
         ensureLayerBuffers(state);
     } else if (port === 0x4 || port === 0x5) {
@@ -236,12 +308,14 @@ export function screen_deo(args,sz,yakuState) {
         drawSpriteCommand(state, yakuState, state.lastSpriteCommand.value);
     }
 
+    syncScreenRegisters(state, yakuState);
     state.events.push({ kind: "DEO", port, size: sz });
-    renderScreen(state);
+    renderScreen(state, yakuState);
 }
 
 export function screen_dei(args,sz,yakuState) {
     const state = getScreenState(yakuState);
+    syncScreenRegisters(state, yakuState);
     state.events.push({ kind: "DEI", port: args[0] & 0xf, size: sz });
     return deviceRead(args,sz,yakuState);
 }

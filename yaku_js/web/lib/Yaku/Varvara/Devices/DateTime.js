@@ -1,50 +1,38 @@
-package Yaku::Varvara::Devices::DateTime;
+"use strict";
 
-use v5.30;
-use warnings;
-no warnings qw(experimental deprecated);
-use feature qw(signatures);
-use strict;
-use bytes;
+import { deviceRead, deviceWrite } from "./Access.js";
 
-use vars qw( $VERSION );
-$VERSION = "1.0.0";
+export const DateTime = 0xc0;
 
-use constant DBG => $ENV{YAKU_DBG} // 0;
-
-use integer;
-
-use Yaku::Varvara::Devices::Access qw( deviceRead deviceWrite );
-
-use Data::Dumper;
-use Carp;
-
-use Exporter;
-
-@Yaku::Varvara::Devices::DateTime::ISA = qw(Exporter);
-
-@Yaku::Varvara::Devices::DateTime::EXPORT = qw(
-    datetime_deo
-    datetime_dei
-    DateTime
-);
-
-use constant {
-    DateTime => 0xc0
-};
-
-# |c0 @DateTime/year $2 &month $1 &day $1 &hour $1 &minute $1 &second $1 &dotw $1 &doty $2 &isdst $1
-sub datetime_dei($args,$sz,$yakuState) {
-    # croak Dumper($args,$sz);
-    my ($sec,$min,$hour,$mday,$mon,$year,$dotw,$doty,$isdst) = localtime();
-    $year+=1900;
-    @{$yakuState->{Uxn}{dev}}[0xc0..0xcf] = ($year>>8,$year&0xff,$mon,$mday,$hour,$min,$sec,$dotw,$doty>>8, $doty&0xff,$isdst);    
-    return deviceRead($args,$sz,$yakuState);
+function dayOfYear(date) {
+    const start = new Date(date.getFullYear(), 0, 0);
+    const diff = date - start + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000);
+    return Math.floor(diff / (1000 * 60 * 60 * 24));
 }
 
-sub datetime_deo($args,$sz,$yakuState) {
-    deviceWrite($args,$sz,$yakuState)
+function writeDateTimeState(yakuState) {
+    const now = new Date();
+    const year = now.getFullYear();
+    const doty = dayOfYear(now);
+
+    yakuState.Uxn.dev[DateTime + 0x0] = (year >> 8) & 0xff;
+    yakuState.Uxn.dev[DateTime + 0x1] = year & 0xff;
+    yakuState.Uxn.dev[DateTime + 0x2] = now.getMonth() + 1;
+    yakuState.Uxn.dev[DateTime + 0x3] = now.getDate();
+    yakuState.Uxn.dev[DateTime + 0x4] = now.getHours();
+    yakuState.Uxn.dev[DateTime + 0x5] = now.getMinutes();
+    yakuState.Uxn.dev[DateTime + 0x6] = now.getSeconds();
+    yakuState.Uxn.dev[DateTime + 0x7] = now.getDay();
+    yakuState.Uxn.dev[DateTime + 0x8] = (doty >> 8) & 0xff;
+    yakuState.Uxn.dev[DateTime + 0x9] = doty & 0xff;
+    yakuState.Uxn.dev[DateTime + 0xa] = 0;
 }
 
+export function datetime_dei(args, sz, yakuState) {
+    writeDateTimeState(yakuState);
+    return deviceRead(args, sz, yakuState);
+}
 
-1;
+export function datetime_deo(args, sz, yakuState) {
+    deviceWrite(args, sz, yakuState);
+}

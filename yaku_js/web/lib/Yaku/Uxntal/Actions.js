@@ -23,6 +23,8 @@ import { Console, console_deo, console_dei } from '../Varvara/Devices/Console.js
 import { Screen, screen_deo, screen_dei } from '../Varvara/Devices/Screen.js';
 import { System, system_deo, system_dei } from '../Varvara/Devices/System.js';
 import { File1, File2, file_deo, file_dei } from '../Varvara/Devices/File.js';
+import { Controller, controller_deo, controller_dei } from '../Varvara/Devices/Controller.js';
+import { DateTime, datetime_deo, datetime_dei } from '../Varvara/Devices/DateTime.js';
 
 export function store(args, sz, yakuState) {
     storeToken([RAW, args[1], sz], yakuState, args[0]);
@@ -165,7 +167,6 @@ export function swap(rs, sz, yakuState, keep) { // a1 a2 b1 b2 => b1 b2 a1 a2
 
 // 对应 sub nip($rs,$sz,$yakuState,$keep) - 修复递归调用问题
 export function nip(rs, sz, yakuState, keep) { // a b -> b; a1 a2 b1 b2 -> b1 b2
-    sz = 1; // for debugging
     if (keep) {
         dup(rs, sz, yakuState, 0); // 修复：添加分号
     } else {
@@ -309,12 +310,18 @@ export function deviceOut(args, sz, yakuState) {
     else if (device === Screen) { // 0x20
         screen_deo(args,sz,yakuState);
     }
+    else if (device === Controller) { // 0x80
+        controller_deo(args,sz,yakuState);
+    }
+    else if (device === DateTime) { // 0xc0
+        datetime_deo(args,sz,yakuState);
+    }
     else if (device === File1 || device === File2) { 
         file_deo(args,sz,yakuState);
     }
     else  {
         // TODO
-        console.warn(`DEO to device ${sprintf("0x%2.2x", $device)} is not supported`);
+        console.warn(`DEO to device 0x${device.toString(16).padStart(2, "0")} is not supported`);
     }
     
     /*
@@ -345,15 +352,18 @@ export function deviceIn(args, sz, yakuState) {
     else if (device === Screen) { // 0x20
         return screen_dei(args,sz,yakuState);
     }
-    else if (device === File1 || File2) { 
-        return file_dei(args,sz,yakuState);
+    else if (device === Controller) { // 0x80
+        return controller_dei(args,sz,yakuState);
     }
-    else if (device === DateTime) { 
+    else if (device === DateTime) { // 0xc0
         return datetime_dei(args,sz,yakuState);
+    }
+    else if (device === File1 || device === File2) { 
+        return file_dei(args,sz,yakuState);
     }
     else  {
         // TODO
-        warn(`DEO to device ${sprintf('0x%2.2x',device)} is not supported`);
+        console.warn(`DEI from device 0x${device.toString(16).padStart(2, "0")} is not supported`);
         return deviceRead(args,sz,yakuState);
     }
 
@@ -406,4 +416,3 @@ export const callInstr = {
     'JMI': [immediateJump, 0, 0],
     'JSI': [immediateCall, 0, 0],
 };
-
